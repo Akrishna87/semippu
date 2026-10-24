@@ -6,7 +6,7 @@ or personal loan, and how many months and how much interest a part payment saves
 nothing you type leaves the phone.
 
 **Download:** the latest build is the `Semippu.apk` in the
-[`semippu-latest` release](https://github.com/Akrishna87/Akrishna87/releases/tag/semippu-latest), or from the
+[`semippu-latest` release](https://github.com/Akrishna87/semippu/releases/tag/semippu-latest), or from the
 [download page](https://akrishna87.github.io/Akrishna87/apps/).
 
 ## Calculators
@@ -77,10 +77,9 @@ Jetpack Compose and Material 3, with no other libraries.
 ## Building
 
 ```
-cd semippu-android
 ./gradlew testReleaseUnitTest assembleRelease
 ```
 
 The release build is signed with `signing/sideload.keystore` so that every build installs as an update
-over the last one. The [workflow](../.github/workflows/semippu-apk.yml) runs the unit tests, builds the APK,
+over the last one. The [workflow](.github/workflows/semippu-apk.yml) runs the unit tests, builds the APK,
 runs the smoke test on an Android 14 emulator and publishes the APK with the test's screenshots.
