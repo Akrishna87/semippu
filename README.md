@@ -1,11 +1,11 @@
-# Semippu (சேமிப்பு) — savings scheme and loan calculators for Android
+# Selvam (செல்வம்) — savings scheme and loan calculators for Android
 
-Semippu means "savings" in Tamil. It works out what India's popular savings schemes pay, at the
+Selvam means "wealth" in Tamil. It works out what India's popular savings schemes pay, at the
 government's current rates, with a year-by-year table. A Loans tab works out the EMI on a home, car
 or personal loan, and how many months and how much interest a part payment saves. The app has no `INTERNET` permission:
 nothing you type leaves the phone.
 
-**Download:** the latest build is the `Semippu.apk` in the
+**Download:** the latest build is the `Selvam.apk` in the
 [`semippu-latest` release](https://github.com/Akrishna87/semippu/releases/tag/semippu-latest), or from the
 [download page](https://akrishna87.github.io/Akrishna87/apps/).
 

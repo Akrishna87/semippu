@@ -69,7 +69,7 @@ fun SemippuRoot() {
 @Composable
 private fun HomeScreen(loansTab: Boolean, onTab: (Boolean) -> Unit, onOpen: (String) -> Unit) {
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Semippu") }) },
+        topBar = { TopAppBar(title = { Text("Selvam") }) },
         bottomBar = {
             NavigationBar {
                 NavigationBarItem(

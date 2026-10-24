@@ -1,4 +1,4 @@
-name: Semippu APK
+name: Selvam APK
 
 on:
   push:
@@ -34,11 +34,11 @@ jobs:
           fi
           exit $status
       - name: Name the APK
-        run: cp app/build/outputs/apk/release/app-release.apk Semippu.apk
+        run: cp app/build/outputs/apk/release/app-release.apk Selvam.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: Semippu-apk
-          path: Semippu.apk
+          name: Selvam-apk
+          path: Selvam.apk
 
   smoke-test:
     needs: build
@@ -47,7 +47,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: Semippu-apk
+          name: Selvam-apk
           path: apk
       - name: Enable KVM
         run: |
@@ -63,7 +63,7 @@ jobs:
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim
-          script: bash ci/smoke-test.sh apk/Semippu.apk smoke-out
+          script: bash ci/smoke-test.sh apk/Selvam.apk smoke-out
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -93,7 +93,7 @@ jobs:
       - uses: actions/download-artifact@v4
         if: steps.changes.outputs.publish == 'true'
         with:
-          name: Semippu-apk
+          name: Selvam-apk
           path: out
       - uses: actions/download-artifact@v4
         if: steps.changes.outputs.publish == 'true'
@@ -108,13 +108,13 @@ jobs:
         run: |
           mkdir -p out/screens
           cp smoke/*.png out/screens/ 2>/dev/null || true
-          apk=out/Semippu.apk
+          apk=out/Selvam.apk
           build=$((GITHUB_RUN_NUMBER + 100))   # the same number the APK was built with
           cat > out/version.json <<JSON
           {
             "versionCode": $build,
             "versionName": "1.0.$build",
-            "apk": "Semippu.apk",
+            "apk": "Selvam.apk",
             "sha256": "$(sha256sum "$apk" | cut -d' ' -f1)",
             "size": $(stat -c %s "$apk")
           }
@@ -123,5 +123,5 @@ jobs:
           gh release create semippu-latest "$apk" out/version.json out/screens/*.png \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "Semippu for Android (build $build)" \
-            --notes "Download **Semippu.apk** on your Android phone, open it, and allow installing from your browser when asked. Each new build installs as an update over the last one. The PNG files are screenshots from the automatic emulator test of this build."
+            --title "Selvam for Android (build $build)" \
+            --notes "Download **Selvam.apk** on your Android phone, open it, and allow installing from your browser when asked. Each new build installs as an update over the last one. The PNG files are screenshots from the automatic emulator test of this build."
