@@ -25,6 +25,13 @@ nothing you type leaves the phone.
 
 Every rate can be changed, to try a different rate or a bank's own.
 
+**Accounts already open.** PPF and Sukanya Samriddhi take an optional balance today and the year you opened the
+account: the maturity value then grows from that balance over the years left, with your deposits still to come
+(₹5 lakh in a PPF opened 4 years ago, adding ₹1.25 lakh a year, matures at ₹31,87,557). RD takes an optional
+balance today and SIP an optional value today, on top of the months or years left. Leave them blank for a new
+account. NSC, KVP, FD, SCSS and MIS are single deposits fixed at the rate on the day you made them, so enter the
+original amount and that rate.
+
 The government rates are those for **1 October – 31 December 2026**. The Ministry of Finance sets
 them every quarter; when they change, update `Rates` at the top of
 [`Schemes.kt`](app/src/main/java/io/github/akrishna87/semippu/Schemes.kt).

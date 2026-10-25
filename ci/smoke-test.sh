@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs inside the Android emulator job: installs the APK, opens the PPF calculator and checks the
-# published figure, types a new deposit, checks SCSS's quarterly payout, then on the Loans tab checks a
+# published figure, types a new deposit and an existing balance and start year, checks SCSS's quarterly payout, then on the Loans tab checks a
 # home loan's EMI and what a part payment saves, as a shorter loan and as a lower EMI.
 # Usage: smoke-test.sh <apk> <output dir>
 set -euo pipefail
@@ -66,10 +66,27 @@ wait_for ppf-typed 'text="₹13,56,070"' 15 "₹50,000 a year doesn't give ₹13
 shot 03-ppf-typed
 echo "PASS: typing"
 
-adb shell input keyevent KEYCODE_BACK   # hides the keyboard
+hide_keyboard() { if adb shell dumpsys input_method | grep -q "mInputShown=true"; then adb shell input keyevent KEYCODE_BACK; sleep 1; fi; }
+
+echo "--- PPF already open: ₹5 lakh in it, opened 4 years ago"
+hide_keyboard
+dump ppf-open
+tap ppf-open "Balance today (₹)"
+adb shell input text 500000
+hide_keyboard
+dump ppf-open2
+tap ppf-open2 "Year you started"
+adb shell input text $(( $(date +%Y) - 4 ))
+hide_keyboard
+adb shell input swipe 540 1800 540 900 600
 sleep 1
-dump ppf-back
-if grep -q 'text="₹13,56,070"' "$OUT/ppf-back.xml"; then adb shell input keyevent KEYCODE_BACK; fi
+# ₹5 lakh grown for the 11 years left, plus ₹50,000 at the start of each: ₹19,13,000.
+wait_for ppf-running 'text="₹19,13,000"' 15 "an account opened 4 years ago with ₹5 lakh doesn't mature at ₹19,13,000"
+grep -q 'text="Maturity value after 11 years"' "$OUT/ppf-running.xml" || fail "it doesn't count the 4 years already done"
+shot 03b-ppf-running
+echo "PASS: PPF already open"
+
+adb shell input keyevent KEYCODE_BACK
 wait_for home2 'text="Public Provident Fund"' 15 "Back doesn't return to the list"
 
 echo "--- SCSS"

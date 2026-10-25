@@ -78,12 +78,61 @@ class SchemesTest {
         assertEquals(listOf("Year 1", "Month 13"), r.rows.map { it.label })
     }
 
+    // An account already open: carrying on from its balance must give the same answer as starting at the start.
+
+    @Test
+    fun ppfCarriesOnFromTodaysBalance() {
+        val whole = ppf(150000.0, 15, 7.1)
+        val after4 = whole.rows[3].balance
+        val rest = ppf(150000.0, 15, 7.1, start = after4, done = 4)
+        assertEquals(whole.maturity, rest.maturity, 1e-6)
+        assertEquals(11, rest.rows.size)
+        assertEquals("Year 5", rest.rows.first().label)
+        assertEquals(150000.0 * 11, rest.invested, 0.0)
+        assertEquals(after4, rest.start, 0.0)
+        assertEquals(rest.maturity - after4 - rest.invested, rest.interest, 1e-6)
+    }
+
+    @Test
+    fun ssyCarriesOnFromTodaysBalance() {
+        val whole = ssy(150000.0, 8.2)
+        assertEquals(whole.maturity, ssy(150000.0, 8.2, whole.rows[3].balance, 4).maturity, 1e-6)
+        // After 17 years the deposits are over; the balance only earns interest.
+        val late = ssy(150000.0, 8.2, whole.rows[16].balance, 17)
+        assertEquals(0.0, late.invested, 0.0)
+        assertEquals(whole.maturity, late.maturity, 1e-6)
+    }
+
+    @Test
+    fun rdAndSipCarryOnFromTodaysValue() {
+        assertEquals(rd(1000.0, 60, 6.7).maturity, rd(1000.0, 36, 6.7, rdValue(1000.0, 24, 6.7)).maturity, 1e-6)
+        val whole = sip(10000.0, 10, 12.0)
+        assertEquals(whole.maturity, sip(10000.0, 6, 12.0, whole.rows[3].balance).maturity, 1e-6)
+    }
+
+    @Test
+    fun optionalFieldsCanBeBlankAndTheStartYearIsChecked() {
+        val ppf = schemes.first { it.id == "ppf" }
+        assertNull(ppf.fields.first { it.key == "balance" }.error(null))
+        assertNull(ppf.fields.first { it.key == "since" }.error(null))
+        val thisYear = java.time.Year.now().value.toDouble()
+        val v = mapOf("deposit" to 150000.0, "years" to 15.0, "rate" to 7.1, "since" to thisYear - 15)
+        assertEquals("since", ppf.check(v)?.first)
+        assertNull(ppf.check(v + ("years" to 20.0)))
+        assertEquals(11 * 12, ppf.calc(v + ("since" to thisYear - 4) + ("balance" to 500000.0)).months)
+        assertEquals(15 * 12, ppf.calc(v - "since").months)
+    }
+
     @Test
     fun everyTableAddsUpToTheResult() {
         for (s in schemes) {
             val r = s.calc(s.fields.associate { it.key to it.default })
             assertEquals(s.id, r.invested, r.rows.sumOf { it.deposited }, 1e-6)
             assertEquals(s.id, r.interest, r.rows.sumOf { it.interest }, 1e-6)
+            // and the same with money already in the account
+            val withBalance = s.calc(s.fields.associate { it.key to it.default } + ("balance" to 250000.0))
+            assertEquals(s.id, withBalance.interest, withBalance.rows.sumOf { it.interest }, 1e-6)
+            assertEquals(s.id, withBalance.maturity, withBalance.rows.last().balance, 1e-6)
             assertEquals(s.id, r.maturity, r.rows.last().balance, 1e-6)
             for (f in s.fields) assertNull("${s.id} ${f.key}", f.error(f.default))
         }

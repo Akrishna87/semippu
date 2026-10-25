@@ -1,5 +1,6 @@
 package io.github.akrishna87.semippu
 
+import java.time.Year
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.ln
@@ -19,7 +20,10 @@ object Rates {
     const val RD = 6.7
 }
 
-/** A number the user types. A value must be in [min, max] and, when [step] is set, min + a whole number of steps. */
+/**
+ * A number the user types. A value must be in [min, max] and, when [step] is set, min + a whole number of steps.
+ * An [optional] field can be left blank; the calculation then doesn't get it.
+ */
 data class Field(
     val key: String,
     val label: String,
@@ -28,9 +32,10 @@ data class Field(
     val max: Double,
     val step: Double? = null,
     val hint: String = "",
+    val optional: Boolean = false,
 ) {
     fun error(value: Double?): String? = when {
-        value == null -> "Enter a number"
+        value == null -> if (optional) null else "Enter a number"
         value < min || value > max -> "From ${plain(min)} to ${plain(max)}"
         step != null && abs((value - min) / step - ((value - min) / step).roundToInt()) > 1e-9 ->
             if (min == step) "In multiples of ${plain(step)}" else "${plain(min)}, then steps of ${plain(step)}"
@@ -52,6 +57,8 @@ data class Result(
     val payout: Double? = null,
     val payoutEvery: String? = null,
     val rows: List<Row>,
+    /** Money already in the account today, which [interest] and [rows] build on. */
+    val start: Double = 0.0,
 )
 
 class Scheme(
@@ -61,33 +68,57 @@ class Scheme(
     val group: String,
     val fields: List<Field>,
     val notes: String,
+    /** A problem between fields, as the key of the field to show it on and the message. */
+    val check: (Map<String, Double>) -> Pair<String, String>? = { null },
     val calc: (Map<String, Double>) -> Result,
 )
 
 private fun rate(default: Double, hint: String = "") =
     Field("rate", "Interest rate (% a year)", default, 0.1, 30.0, hint = hint)
 
+private fun balance(label: String = "Balance today (₹)", hint: String = "Optional: what's in the account already") =
+    Field("balance", label, 0.0, 0.0, 1e10, hint = hint, optional = true)
+
+private val thisYear = Year.now().value
+
+private fun since(maxYears: Int) = Field(
+    "since", "Year you started", thisYear.toDouble(), (thisYear - maxYears + 1).toDouble(), thisYear.toDouble(),
+    step = 1.0, hint = "Optional: for an account that's already open", optional = true,
+)
+
+/** Whole years since the account was opened, or 0 for a new one. */
+private fun done(v: Map<String, Double>) = v["since"]?.let { thisYear - it.toInt() } ?: 0
+
 val schemes = listOf(
     Scheme(
         "ppf", "PPF", "Public Provident Fund", "Government schemes",
         listOf(
             Field("deposit", "Deposit each year (₹)", 150000.0, 500.0, 150000.0),
-            Field("years", "Years", 15.0, 15.0, 50.0, step = 5.0, hint = "15, then blocks of 5"),
+            Field("years", "Years", 15.0, 15.0, 50.0, step = 5.0, hint = "15, then blocks of 5, from when it was opened"),
             rate(Rates.PPF),
+            balance(),
+            since(50),
         ),
         "15 years, which you can extend in blocks of 5. ₹500 to ₹1.5 lakh a year. Assumes you deposit by 5 April " +
-            "each year, so the whole year earns interest. The interest is tax-free.",
-    ) { ppf(it.getValue("deposit"), it.getValue("years").toInt(), it.getValue("rate")) },
+            "each year, so the whole year earns interest. The interest is tax-free. For an account that's already " +
+            "open, enter its balance and the year you opened it: it grows from today's balance.",
+        check = { v ->
+            val years = v.getValue("years").toInt()
+            if (done(v) >= years) "since" to "That's $years years or more ago: extend the years above" else null
+        },
+    ) { ppf(it.getValue("deposit"), it.getValue("years").toInt(), it.getValue("rate"), it["balance"] ?: 0.0, done(it)) },
     Scheme(
         "ssy", "Sukanya Samriddhi", "Sukanya Samriddhi Yojana", "Government schemes",
         listOf(
             Field("deposit", "Deposit each year (₹)", 150000.0, 250.0, 150000.0),
             rate(Rates.SSY),
+            balance(),
+            since(21),
         ),
         "For a girl under 10. You deposit for 15 years; the account matures 21 years after it was opened and keeps " +
             "earning interest in between. ₹250 to ₹1.5 lakh a year. Assumes you deposit by 5 April each year. " +
-            "The interest is tax-free.",
-    ) { ssy(it.getValue("deposit"), it.getValue("rate")) },
+            "The interest is tax-free. For an account that's already open, enter its balance and the year you opened it.",
+    ) { ssy(it.getValue("deposit"), it.getValue("rate"), it["balance"] ?: 0.0, done(it)) },
     Scheme(
         "nsc", "NSC", "National Savings Certificate", "Government schemes",
         listOf(
@@ -143,55 +174,69 @@ val schemes = listOf(
             Field("monthly", "Deposit each month (₹)", 5000.0, 1.0, 1e8),
             Field("months", "Months", 60.0, 1.0, 360.0, step = 1.0),
             rate(Rates.RD, hint = "Post Office 5-year RD rate"),
+            balance(hint = "Optional: for an RD that's already running; then enter the months left"),
         ),
         "Starts at the Post Office 5-year RD rate. Interest is added every quarter, as the Post Office and most banks " +
             "do. Enter your bank's rate if it's different.",
-    ) { rd(it.getValue("monthly"), it.getValue("months").toInt(), it.getValue("rate")) },
+    ) { rd(it.getValue("monthly"), it.getValue("months").toInt(), it.getValue("rate"), it["balance"] ?: 0.0) },
     Scheme(
         "sip", "SIP", "Mutual fund SIP", "Mutual funds",
         listOf(
             Field("monthly", "Invest each month (₹)", 10000.0, 1.0, 1e8),
             Field("years", "Years", 10.0, 1.0, 50.0, step = 1.0),
             Field("rate", "Expected return (% a year)", 12.0, 0.1, 30.0, hint = "Not guaranteed"),
+            balance("Value today (₹)", "Optional: what your funds are worth now; it grows at the same return"),
         ),
         "Returns aren't guaranteed: the expected return is an assumption, not a promise. Assumes you invest at the " +
             "start of each month.",
-    ) { sip(it.getValue("monthly"), it.getValue("years").toInt(), it.getValue("rate")) },
+    ) { sip(it.getValue("monthly"), it.getValue("years").toInt(), it.getValue("rate"), it["balance"] ?: 0.0) },
 )
 
 // ---------- the calculations ----------
 
-/** Rows at the end of each year, and at the last month if that isn't a whole year. */
-private fun table(months: Int, deposited: (Int) -> Double, balance: (Int) -> Double): List<Row> {
+/**
+ * Rows at the end of each year, and at the last month if that isn't a whole year, starting from [start] in the
+ * account. Years are numbered from when the account was opened, [yearsDone] years ago.
+ */
+private fun table(
+    months: Int, deposited: (Int) -> Double, start: Double = 0.0, yearsDone: Int = 0, balance: (Int) -> Double,
+): List<Row> {
     val ends = (12..months step 12).toMutableList()
     if (months % 12 != 0) ends += months
     var lastDeposited = 0.0
-    var lastBalance = 0.0
+    var lastBalance = start
     return ends.map { m ->
         val d = deposited(m) - lastDeposited
         val b = balance(m)
-        Row(if (m % 12 == 0) "Year ${m / 12}" else "Month $m", d, b - lastBalance - d, b)
+        Row(if (m % 12 == 0) "Year ${yearsDone + m / 12}" else "Month $m", d, b - lastBalance - d, b)
             .also { lastDeposited += d; lastBalance = b }
     }
 }
 
-private fun result(invested: Double, maturity: Double, months: Int, rows: List<Row>) =
-    Result(invested, maturity - invested, maturity, months, rows = rows)
+private fun result(invested: Double, maturity: Double, months: Int, rows: List<Row>, start: Double = 0.0) =
+    Result(invested, maturity - invested - start, maturity, months, rows = rows, start = start)
 
-/** A deposit at the start of each of the first [depositYears] years, compounded yearly. */
-private fun yearlyBalance(deposit: Double, r: Double, years: Int, depositYears: Int) =
-    (1..years).fold(0.0) { b, y -> (b + if (y <= depositYears) deposit else 0.0) * (1 + r) }
+/** [years] more years from [start], with a deposit at the start of each year while [depositsLeft] lasts, compounded yearly. */
+private fun yearlyBalance(start: Double, deposit: Double, r: Double, years: Int, depositsLeft: Int) =
+    (1..years).fold(start) { b, y -> (b + if (y <= depositsLeft) deposit else 0.0) * (1 + r) }
 
-fun ppf(deposit: Double, years: Int, ratePct: Double): Result {
+/** PPF for [years] from opening; [done] of them have passed and the account holds [start] today. */
+fun ppf(deposit: Double, years: Int, ratePct: Double, start: Double = 0.0, done: Int = 0): Result {
     val r = ratePct / 100
-    val rows = table(years * 12, { m -> m / 12 * deposit }) { m -> yearlyBalance(deposit, r, m / 12, years) }
-    return result(deposit * years, rows.last().balance, years * 12, rows)
+    val left = years - done
+    val rows = table(left * 12, { m -> m / 12 * deposit }, start, done) { m -> yearlyBalance(start, deposit, r, m / 12, left) }
+    return result(deposit * left, rows.last().balance, left * 12, rows, start)
 }
 
-fun ssy(deposit: Double, ratePct: Double): Result {
+/** SSY matures 21 years after opening, with deposits in the first 15; [done] years have passed. */
+fun ssy(deposit: Double, ratePct: Double, start: Double = 0.0, done: Int = 0): Result {
     val r = ratePct / 100
-    val rows = table(21 * 12, { m -> minOf(m / 12, 15) * deposit }) { m -> yearlyBalance(deposit, r, m / 12, 15) }
-    return result(deposit * 15, rows.last().balance, 21 * 12, rows)
+    val left = 21 - done
+    val depositsLeft = maxOf(15 - done, 0)
+    val rows = table(left * 12, { m -> minOf(m / 12, depositsLeft) * deposit }, start, done) { m ->
+        yearlyBalance(start, deposit, r, m / 12, depositsLeft)
+    }
+    return result(deposit * depositsLeft, rows.last().balance, left * 12, rows, start)
 }
 
 fun nsc(amount: Double, ratePct: Double): Result {
@@ -232,16 +277,19 @@ fun rdValue(monthly: Double, months: Int, ratePct: Double): Double {
     return (1..months).sumOf { k -> monthly * q.pow((months - k + 1) / 3.0) }
 }
 
-fun rd(monthly: Double, months: Int, ratePct: Double): Result {
-    val rows = table(months, { m -> m * monthly }) { m -> rdValue(monthly, m, ratePct) }
-    return result(monthly * months, rows.last().balance, months, rows)
+/** [months] more instalments; an RD already running holds [start] today, which keeps earning. */
+fun rd(monthly: Double, months: Int, ratePct: Double, start: Double = 0.0): Result {
+    val q = 1 + ratePct / 100 / 4
+    val rows = table(months, { m -> m * monthly }, start) { m -> rdValue(monthly, m, ratePct) + start * q.pow(m / 3.0) }
+    return result(monthly * months, rows.last().balance, months, rows, start)
 }
 
-fun sip(monthly: Double, years: Int, ratePct: Double): Result {
+/** [years] more of monthly investments, on top of funds worth [start] today growing at the same return. */
+fun sip(monthly: Double, years: Int, ratePct: Double, start: Double = 0.0): Result {
     val i = ratePct / 100 / 12
-    val value = { m: Int -> monthly * ((1 + i).pow(m) - 1) / i * (1 + i) }
-    val rows = table(years * 12, { m -> m * monthly }, value)
-    return result(monthly * years * 12, rows.last().balance, years * 12, rows)
+    val value = { m: Int -> monthly * ((1 + i).pow(m) - 1) / i * (1 + i) + start * (1 + i).pow(m) }
+    val rows = table(years * 12, { m -> m * monthly }, start, balance = value)
+    return result(monthly * years * 12, rows.last().balance, years * 12, rows, start)
 }
 
 // ---------- showing numbers ----------

@@ -147,10 +147,14 @@ private fun SavingsList(padding: PaddingValues, onOpen: (String) -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CalculatorScreen(scheme: Scheme, onBack: () -> Unit) {
-    var text by rememberSaveable(scheme.id) { mutableStateOf(scheme.fields.associate { it.key to plain(it.default) }) }
+    var text by rememberSaveable(scheme.id) {
+        mutableStateOf(scheme.fields.associate { it.key to if (it.optional) "" else plain(it.default) })
+    }
     val values = scheme.fields.associate { it.key to parse(text[it.key]) }
-    val errors = scheme.fields.associate { it.key to it.error(values[it.key]) }
-    val result = if (errors.values.all { it == null }) scheme.calc(values.mapValues { it.value!! }) else null
+    val errors = scheme.fields.associate { it.key to it.error(values[it.key]) }.toMutableMap()
+    val typed = values.filterValues { it != null }.mapValues { it.value!! }
+    if (errors.values.all { it == null }) scheme.check(typed)?.let { (key, message) -> errors[key] = message }
+    val result = if (errors.values.all { it == null }) scheme.calc(typed) else null
 
     Scaffold(
         topBar = {
@@ -216,8 +220,16 @@ private fun Summary(r: Result) {
                 inWords(r.maturity)?.let { Text(it) }
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            Line("You invest", rupees(r.invested))
-            Line(if (r.payout != null) "Total interest paid to you" else "Interest earned", rupees(r.interest))
+            if (r.start > 0) Line("Balance today", rupees(r.start))
+            Line(if (r.start > 0) "You add from now" else "You invest", rupees(r.invested))
+            Line(
+                when {
+                    r.payout != null -> "Total interest paid to you"
+                    r.start > 0 -> "Interest from now"
+                    else -> "Interest earned"
+                },
+                rupees(r.interest),
+            )
         }
     }
 }
