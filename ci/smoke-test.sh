@@ -98,6 +98,15 @@ echo "PASS: SCSS"
 adb shell input keyevent KEYCODE_BACK
 wait_for home3 'text="Public Provident Fund"' 15 "Back doesn't return to the list"
 
+echo "--- EPF"
+tap home3 "EPF"
+wait_for epf 'text="₹1,31,16,657"' 15 "₹30,000 basic from 30 to 58 with 5% raises doesn't come to ₹1,31,16,657"
+grep -q 'text="Your employer puts in"' "$OUT/epf.xml" || fail "EPF doesn't show the employer's share"
+shot 04b-epf
+echo "PASS: EPF"
+adb shell input keyevent KEYCODE_BACK
+wait_for home3 'text="Public Provident Fund"' 15 "Back doesn't return to the list"
+
 echo "--- Loans"
 tap home3 "Loans"
 wait_for loans 'text="Home loan"' 15 "the Loans tab doesn't list the loans"

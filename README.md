@@ -21,11 +21,12 @@ nothing you type leaves the phone.
 | Monthly Income Scheme | 7.4% | Interest paid every month for 5 years, then the deposit is returned |
 | Fixed Deposit | 7% (an example; enter your bank's) | Compounded quarterly; months past the last full quarter earn simple interest |
 | Recurring Deposit | 6.7% (Post Office 5-year RD) | Monthly deposits, compounded quarterly |
+| EPF | 8.25% (EPFO's rate for 2025-26) | 12% of basic + DA from you, and your employer's 12% less the pension share (8.33%, at most ₹1,250 a month); optional VPF; interest on each month's balance, added yearly; pay rises yearly, until you retire |
 | SIP | 12% (an assumption, not guaranteed) | Monthly investments at the start of each month, compounded monthly |
 
 Every rate can be changed, to try a different rate or a bank's own.
 
-**Accounts already open.** PPF and Sukanya Samriddhi take an optional balance today and the year you opened the
+**Accounts already open.** EPF takes an optional balance from your passbook. PPF and Sukanya Samriddhi take an optional balance today and the year you opened the
 account: the maturity value then grows from that balance over the years left, with your deposits still to come
 (₹5 lakh in a PPF opened 4 years ago, adding ₹1.25 lakh a year, matures at ₹31,87,557). RD takes an optional
 balance today and SIP an optional value today, on top of the months or years left. Leave them blank for a new
@@ -64,7 +65,7 @@ checked against the closed-form number of months left.
 ## Not included
 
 - Tax: what you'd owe on taxable interest, or 80C savings.
-- EPF, NPS and Atal Pension Yojana.
+- NPS, Atal Pension Yojana, and the EPS pension that comes with EPF.
 - Prepayment charges on loans, and floating rates that change during the loan.
 - Comparing schemes side by side.
 

@@ -221,7 +221,8 @@ private fun Summary(r: Result) {
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             if (r.start > 0) Line("Balance today", rupees(r.start))
-            Line(if (r.start > 0) "You add from now" else "You invest", rupees(r.invested))
+            if (r.parts.isNotEmpty()) r.parts.forEach { (label, amount) -> Line(label, rupees(amount)) }
+            else Line(if (r.start > 0) "You add from now" else "You invest", rupees(r.invested))
             Line(
                 when {
                     r.payout != null -> "Total interest paid to you"

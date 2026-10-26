@@ -3,6 +3,7 @@ package io.github.akrishna87.semippu
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.pow
 
@@ -121,6 +122,42 @@ class SchemesTest {
         assertNull(ppf.check(v + ("years" to 20.0)))
         assertEquals(11 * 12, ppf.calc(v + ("since" to thisYear - 4) + ("balance" to 500000.0)).months)
         assertEquals(15 * 12, ppf.calc(v - "since").months)
+    }
+
+    @Test
+    fun epfSplitsTheEmployerShareAndAddsInterestYearly() {
+        // ₹15,000 basic: you 12% = ₹1,800; employer 12% less 8.33% to EPS (₹1,249.50) = ₹550.50 a month.
+        val r = epf(15000.0, 57, 58, 0.0, 8.25)
+        val c = 1800.0 + 550.5
+        val interest = 8.25 / 1200 * 78 * c   // on the closing balances c, 2c … 12c
+        assertEquals(12 * c + interest, r.maturity, 1e-6)
+        assertEquals(listOf("You put in" to 21600.0, "Your employer puts in" to 6606.0), r.parts)
+        assertEquals("Age 58", r.rows.single().label)
+        // Above ₹15,000 the pension share stops at ₹1,250, so more reaches EPF.
+        assertEquals(12 * (3600.0 - 1250.0), epf(30000.0, 57, 58, 0.0, 8.25).parts[1].second, 1e-6)
+    }
+
+    @Test
+    fun vpfIsOptionalAndOnlyAddsToYourShare() {
+        val without = epf(30000.0, 30, 58, 5.0, 8.25)
+        val with = epf(30000.0, 30, 58, 5.0, 8.25, vpfPct = 10.0)
+        assertEquals(without.parts[1].second, with.parts[1].second, 1e-6)
+        assertEquals(without.parts[0].second * 22 / 12, with.parts[0].second, 1e-6)
+        assertTrue(with.maturity > without.maturity)
+        val epfScheme = schemes.first { it.id == "epf" }
+        assertNull(epfScheme.fields.first { it.key == "vpf" }.error(null))
+        val v = epfScheme.fields.filter { !it.optional }.associate { it.key to it.default }
+        assertEquals(without.maturity, epfScheme.calc(v).maturity, 1e-6)
+        assertEquals("retire", epfScheme.check(v + ("age" to 58.0))?.first)
+    }
+
+    @Test
+    fun epfPayRisesAndCarriesOnFromTodaysBalance() {
+        val whole = epf(10000.0, 30, 58, 5.0, 8.25)
+        assertEquals(whole.rows[0].deposited * 1.05, whole.rows[1].deposited, 1e-6)
+        val rest = epf(10000.0 * 1.05.pow(4), 34, 58, 5.0, 8.25, start = whole.rows[3].balance)
+        assertEquals(whole.maturity, rest.maturity, 1e-4)
+        assertEquals("Age 35", rest.rows.first().label)
     }
 
     @Test

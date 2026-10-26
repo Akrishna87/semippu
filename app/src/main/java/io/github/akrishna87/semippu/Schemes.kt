@@ -18,6 +18,10 @@ object Rates {
     const val SCSS = 8.2
     const val MIS = 7.4
     const val RD = 6.7
+
+    /** EPF's rate is declared once a year by EPFO, not every quarter. */
+    const val EPF_YEAR = "2025-26"
+    const val EPF = 8.25
 }
 
 /**
@@ -59,6 +63,8 @@ data class Result(
     val rows: List<Row>,
     /** Money already in the account today, which [interest] and [rows] build on. */
     val start: Double = 0.0,
+    /** Who [invested] came from, when it's more than one person (EPF: you and your employer). */
+    val parts: List<Pair<String, Double>> = emptyList(),
 )
 
 class Scheme(
@@ -158,6 +164,28 @@ val schemes = listOf(
         "Up to ₹9 lakh in a single account or ₹15 lakh in a joint one, in multiples of ₹1,000. Interest is paid " +
             "every month, and the deposit comes back after 5 years. The interest is taxable.",
     ) { payout(it.getValue("amount"), it.getValue("rate"), perYear = 12, every = "every month") },
+    Scheme(
+        "epf", "EPF", "Employees' Provident Fund", "Retirement",
+        listOf(
+            Field("basic", "Basic pay + DA a month (₹)", 30000.0, 1.0, 1e8),
+            Field("age", "Your age", 30.0, 18.0, 59.0, step = 1.0),
+            Field("retire", "Retire at", 58.0, 19.0, 60.0, step = 1.0, hint = "EPF is paid out at 58"),
+            Field("raise", "Pay rise each year (%)", 5.0, 0.0, 30.0),
+            Field("rate", "Interest rate (% a year)", Rates.EPF, 0.1, 30.0, hint = "Rate for ${Rates.EPF_YEAR}"),
+            Field("vpf", "VPF (% of basic + DA)", 0.0, 0.0, 88.0, hint = "Optional: extra you choose to put in", optional = true),
+            balance(hint = "Optional: from your EPF passbook"),
+        ),
+        "You put in 12% of basic + DA, and your employer 12%: 3.67% goes to your EPF and 8.33% to the pension " +
+            "scheme (EPS), at most ₹1,250 a month. VPF is extra you can choose to add, up to all of your basic, and " +
+            "earns the same rate. Interest is worked out on each month's balance and added once a year. Interest on " +
+            "more than ₹2.5 lakh a year of your own contributions is taxable. The EPS pension isn't included here.",
+        check = { v -> if (v.getValue("retire") <= v.getValue("age")) "retire" to "Later than your age" else null },
+    ) {
+        epf(
+            it.getValue("basic"), it.getValue("age").toInt(), it.getValue("retire").toInt(), it.getValue("raise"),
+            it.getValue("rate"), it["vpf"] ?: 0.0, it["balance"] ?: 0.0,
+        )
+    },
     Scheme(
         "fd", "Fixed Deposit", "Bank fixed deposit", "Deposits",
         listOf(
@@ -275,6 +303,38 @@ fun fd(amount: Double, months: Int, ratePct: Double): Result {
 fun rdValue(monthly: Double, months: Int, ratePct: Double): Double {
     val q = 1 + ratePct / 100 / 4
     return (1..months).sumOf { k -> monthly * q.pow((months - k + 1) / 3.0) }
+}
+
+/**
+ * EPF until [retire]: each month 12% of [basic] (plus [vpfPct]) from you and 12% from your employer, less the
+ * pension share of 8.33% (at most ₹1,250). Interest at [ratePct] on each month's closing balance, added at the end
+ * of the year. [basic] rises by [raisePct] every year after the first.
+ */
+fun epf(
+    basic: Double, age: Int, retire: Int, raisePct: Double, ratePct: Double, vpfPct: Double = 0.0, start: Double = 0.0,
+): Result {
+    val years = retire - age
+    val r = ratePct / 1200
+    var pay = basic
+    var b = start
+    var yours = 0.0
+    var employer = 0.0
+    val rows = (1..years).map { y ->
+        if (y > 1) pay *= 1 + raisePct / 100
+        val mine = pay * (0.12 + vpfPct / 100)
+        val theirs = pay * 0.12 - minOf(pay * 0.0833, 1250.0)
+        val c = mine + theirs
+        // Closing balances of the 12 months: b + c, b + 2c … b + 12c.
+        val interest = r * (12 * b + 78 * c)
+        b += 12 * c + interest
+        yours += 12 * mine
+        employer += 12 * theirs
+        Row("Age ${age + y}", 12 * c, interest, b)
+    }
+    return Result(
+        yours + employer, b - start - yours - employer, b, years * 12, rows = rows, start = start,
+        parts = listOf("You put in" to yours, "Your employer puts in" to employer),
+    )
 }
 
 /** [months] more instalments; an RD already running holds [start] today, which keeps earning. */
