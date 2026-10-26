@@ -101,7 +101,9 @@ wait_for home3 'text="Public Provident Fund"' 15 "Back doesn't return to the lis
 echo "--- EPF"
 tap home3 "EPF"
 wait_for epf 'text="₹1,31,16,657"' 15 "₹30,000 basic from 30 to 58 with 5% raises doesn't come to ₹1,31,16,657"
-grep -q 'text="Your employer puts in"' "$OUT/epf.xml" || fail "EPF doesn't show the employer's share"
+adb shell input swipe 540 1800 540 900 600   # the shares are below the seven fields
+sleep 1
+wait_for epf-shares 'text="Your employer puts in"' 15 "EPF doesn't show the employer's share"
 shot 04b-epf
 echo "PASS: EPF"
 adb shell input keyevent KEYCODE_BACK
