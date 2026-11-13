@@ -1,0 +1,50 @@
+name: Quarterly rates
+
+# The Ministry of Finance notifies small savings rates for each quarter, usually on the last working day of the
+# quarter before. Early in each quarter this reads them from India Post's official page; if anything changed (the
+# rates, or just the quarter they're for), it commits the new rates to main and starts a build, which tests the app
+# and publishes the new Selvam.apk. The later runs in the month catch a page that was updated late.
+
+on:
+  schedule:
+    # 09:00 India time (03:30 UTC) on the 1st, 4th, 10th and 20th of January, April, July and October.
+    - cron: "30 3 1,4,10,20 1,4,7,10 *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: semippu-rates
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Read the rates from India Post
+        id: rates
+        run: python3 ci/update_rates.py
+      - name: Commit them and build a new APK
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUARTER: ${{ steps.rates.outputs.quarter }}
+          SUMMARY: ${{ steps.rates.outputs.summary }}
+        run: |
+          if git diff --quiet; then
+            echo "The app already has India Post's rates for $QUARTER."
+            exit 0
+          fi
+          git diff
+          git config user.name "github-actions[bot]"
+          git config user.email "41898288+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Rates for $QUARTER from India Post" -m "$SUMMARY." \
+            -m "Read from https://www.indiapost.gov.in/banking-services/savings by the Quarterly rates workflow."
+          git push origin HEAD:main
+          # A push made with this workflow's token doesn't start other workflows, so start the build directly.
+          gh workflow run semippu-apk.yml --ref main
