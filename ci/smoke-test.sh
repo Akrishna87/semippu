@@ -126,9 +126,9 @@ echo "--- NPS Tier I"
 scroll_to home-nps "NPS Tier I"
 tap home-nps "NPS Tier I"
 # ₹5,000 a month from 30 to 60 at 10%: ₹1,13,96,627; 20% buys an annuity paying 6%.
-wait_for nps 'text="₹1,13,96,627"' 15 "₹5,000 a month for 30 years at 10% doesn't come to ₹1,13,96,627"
-for _ in 1 2 3 4; do adb shell input swipe 540 1800 540 900 600; sleep 1; done
-wait_for nps-split 'text="Pension a month, at 6%"' 15 "NPS doesn't show the pension from the annuity"
+wait_for nps 'text="NPS Tier I"' 15 "NPS Tier I doesn't open"
+scroll_to nps-total "₹1,13,96,627"   # the result is below the ten fields
+scroll_to nps-split "Pension a month, at 6%"
 shot 04c-nps
 echo "PASS: NPS Tier I"
 adb shell input keyevent KEYCODE_BACK
