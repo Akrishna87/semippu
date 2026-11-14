@@ -141,14 +141,107 @@ class SchemesTest {
     fun vpfIsOptionalAndOnlyAddsToYourShare() {
         val without = epf(30000.0, 30, 58, 5.0, 8.25)
         val with = epf(30000.0, 30, 58, 5.0, 8.25, vpfPct = 10.0)
-        assertEquals(without.parts[1].second, with.parts[1].second, 1e-6)
-        assertEquals(without.parts[0].second * 22 / 12, with.parts[0].second, 1e-6)
+        // VPF shows as its own line; your 12% and the employer's share don't change.
+        assertEquals(listOf("Your EPF (12%)", "Your VPF", "Your employer puts in"), with.parts.map { it.first })
+        assertEquals(without.parts[0].second, with.parts[0].second, 1e-6)
+        assertEquals(without.parts[0].second * 10 / 12, with.parts[1].second, 1e-6)
+        assertEquals(without.parts[1].second, with.parts[2].second, 1e-6)
+        assertEquals(with.invested, with.parts.sumOf { it.second }, 1e-6)
         assertTrue(with.maturity > without.maturity)
         val epfScheme = schemes.first { it.id == "epf" }
         assertNull(epfScheme.fields.first { it.key == "vpf" }.error(null))
         val v = epfScheme.fields.filter { !it.optional }.associate { it.key to it.default }
         assertEquals(without.maturity, epfScheme.calc(v).maturity, 1e-6)
         assertEquals("retire", epfScheme.check(v + ("age" to 58.0))?.first)
+    }
+
+    @Test
+    fun epfSaysWhenYourContributionsPassTheTaxFreeLimit() {
+        assertNull(epf(30000.0, 30, 58, 5.0, 8.25).note)
+        // ₹1 lakh basic: 12% + 10% VPF is ₹2.64 lakh a year, over ₹2.5 lakh from the start.
+        assertEquals(
+            "From age 30 you put in more than ₹2.5 lakh a year: the interest on the part above that is taxable.",
+            epf(100000.0, 30, 58, 5.0, 8.25, vpfPct = 10.0).note,
+        )
+    }
+
+    @Test
+    fun lumpsumCompoundsYearly() {
+        // ₹1 lakh for 10 years at 12%: ₹3,10,585, as fund houses' calculators show.
+        val r = lumpsum(100000.0, 10, 12.0)
+        assertEquals("₹3,10,585", rupees(r.maturity))
+        assertEquals(100000.0, r.invested, 0.0)
+        assertEquals(10, r.rows.size)
+        assertEquals(100000.0, r.rows.first().deposited, 0.0)
+        assertEquals(0.0, r.rows[1].deposited, 0.0)
+    }
+
+    @Test
+    fun npsTier1SplitsTheCorpusAtExit() {
+        val r = nps(5000.0, 0.0, 30, 60, 0.0, 10.0, 20.0, 6.0)
+        // Like a SIP: ₹5,000 at the start of each month for 30 years at 10%.
+        assertEquals(sip(5000.0, 30, 10.0).maturity, r.maturity, 1e-3)
+        assertEquals(5000.0 * 360, r.invested, 1e-6)
+        val (lump, annuity) = r.maturity * 0.8 to r.maturity * 0.2
+        assertEquals(
+            listOf(
+                "Lump sum you can take" to lump,
+                "Of which tax-free (60% of the total)" to r.maturity * 0.6,
+                "Buys an annuity (20%)" to annuity,
+                "Pension a month, at 6%" to annuity * 0.06 / 12,
+            ).map { it.first }, r.after.map { it.first },
+        )
+        assertEquals(lump, r.after[0].second, 1e-6)
+        assertEquals(annuity * 0.06 / 12, r.after[3].second, 1e-6)
+        assertEquals("Your NPS at exit", r.title)
+    }
+
+    @Test
+    fun npsTier1FollowsTheExitRules() {
+        // ₹8 lakh or less: all of it as a lump sum.
+        val small = nps(1000.0, 0.0, 40, 60, 0.0, 8.0, 20.0, 6.0)
+        assertTrue(small.maturity < 800000)
+        assertEquals(
+            listOf("Lump sum you can take" to small.maturity, "Of which tax-free (60% of the total)" to small.maturity * 0.6),
+            small.after,
+        )
+        // Leaving at 45 after 10 years: at least 80% buys an annuity.
+        val early = nps(10000.0, 0.0, 35, 45, 0.0, 10.0, 20.0, 6.0)
+        assertTrue(early.maturity > 500000)
+        assertEquals(early.maturity * 0.2, early.after[0].second, 1e-6)
+        assertEquals("Buys an annuity (80%)", early.after[1].first)
+        // The same, but in NPS for 15 years already: the usual 20%.
+        assertEquals(early.maturity * 0.8, nps(10000.0, 0.0, 35, 45, 0.0, 10.0, 20.0, 6.0, done = 5).after[0].second, 1e-6)
+        // An employer's share is shown separately and counts in what's put in.
+        val corp = nps(5000.0, 3000.0, 30, 60, 5.0, 10.0, 40.0, 6.0)
+        assertEquals(listOf("You put in", "Your employer puts in"), corp.parts.map { it.first })
+        assertEquals(corp.invested, corp.parts.sumOf { it.second }, 1e-6)
+        assertEquals(corp.rows[0].deposited * 1.05, corp.rows[1].deposited, 1e-6)
+        // Keeping 40% for a pension, the whole 60% lump sum is tax-free, so there is no taxable part to show.
+        assertEquals(listOf("Lump sum you can take", "Buys an annuity (40%)", "Pension a month, at 6%"), corp.after.map { it.first })
+    }
+
+    @Test
+    fun npsCarriesOnFromTodaysValue() {
+        val whole = nps(5000.0, 0.0, 30, 60, 0.0, 10.0, 20.0, 6.0)
+        val rest = nps(5000.0, 0.0, 34, 60, 0.0, 10.0, 20.0, 6.0, start = whole.rows[3].balance, done = 4)
+        assertEquals(whole.maturity, rest.maturity, 1e-3)
+        assertEquals("Age 35", rest.rows.first().label)
+    }
+
+    @Test
+    fun npsTier2HasNoLockIn() {
+        val tier2 = schemes.first { it.id == "nps2" }
+        val r = tier2.calc(tier2.fields.associate { it.key to it.default })
+        assertEquals(sip(5000.0, 10, 9.0).maturity, r.maturity, 1e-6)
+        assertNotNull(r.note)
+    }
+
+    @Test
+    fun ratesSayWhenTheQuarterIsOver() {
+        val end = java.time.LocalDate.parse(Rates.QUARTER_END)
+        assertTrue(!ratesOutOfDate(end))
+        assertTrue(ratesOutOfDate(end.plusDays(1)))
     }
 
     @Test

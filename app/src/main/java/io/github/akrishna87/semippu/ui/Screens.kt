@@ -47,6 +47,7 @@ import io.github.akrishna87.semippu.Scheme
 import io.github.akrishna87.semippu.inWords
 import io.github.akrishna87.semippu.loanTypes
 import io.github.akrishna87.semippu.plain
+import io.github.akrishna87.semippu.ratesOutOfDate
 import io.github.akrishna87.semippu.rupees
 import io.github.akrishna87.semippu.schemes
 import io.github.akrishna87.semippu.term
@@ -119,6 +120,21 @@ private fun SavingsList(padding: PaddingValues, onOpen: (String) -> Unit) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+        if (ratesOutOfDate()) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                ) {
+                    Text(
+                        "A new quarter has started, so the government may have changed these rates. Download the " +
+                            "latest Selvam for the new ones, or type the rate in.",
+                        Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
         }
         for ((group, list) in schemes.groupBy { it.group }) {
             item {
@@ -215,7 +231,7 @@ private fun Summary(r: Result) {
                 Text("${rupees(r.payout)} ${r.payoutEvery}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Text("and your ${rupees(r.maturity)} back after ${term(r.months)}")
             } else {
-                Text("Maturity value after ${term(r.months)}", style = MaterialTheme.typography.labelLarge)
+                Text("${r.title} after ${term(r.months)}", style = MaterialTheme.typography.labelLarge)
                 Text(rupees(r.maturity), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                 inWords(r.maturity)?.let { Text(it) }
             }
@@ -231,6 +247,13 @@ private fun Summary(r: Result) {
                 },
                 rupees(r.interest),
             )
+            if (r.after.isNotEmpty()) {
+                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                r.after.forEach { (label, amount) -> Line(label, rupees(amount)) }
+            }
+            r.note?.let {
+                Text(it, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodyMedium)
+            }
         }
     }
 }

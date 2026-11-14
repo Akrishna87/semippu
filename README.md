@@ -21,8 +21,11 @@ nothing you type leaves the phone.
 | Monthly Income Scheme | 7.4% | Interest paid every month for 5 years, then the deposit is returned |
 | Fixed Deposit | 7% (an example; enter your bank's) | Compounded quarterly; months past the last full quarter earn simple interest |
 | Recurring Deposit | 6.7% (Post Office 5-year RD) | Monthly deposits, compounded quarterly |
-| EPF | 8.25% (EPFO's rate for 2025-26) | 12% of basic + DA from you, and your employer's 12% less the pension share (8.33%, at most ₹1,250 a month); optional VPF; interest on each month's balance, added yearly; pay rises yearly, until you retire |
+| EPF + VPF | 8.25% (EPFO's rate for 2025-26) | 12% of basic + DA from you, and your employer's 12% less the pension share (8.33%, at most ₹1,250 a month); optional VPF, shown as its own line, at the same rate; interest on each month's balance, added yearly; pay rises yearly, until you retire. Says when your own contributions pass ₹2.5 lakh a year and the interest becomes taxable |
+| NPS Tier I | 10% (an assumption, not guaranteed) | Your monthly contribution (and optionally your employer's), rising each year if you choose, compounded monthly until you exit (60, or up to 85). At exit: the lump sum (up to 80%), how much of it is tax-free (60% of the total), the annuity (at least 20%) and the pension it pays. Follows PFRDA's exit rules: all as a lump sum at ₹8 lakh or less, the ₹8–12 lakh options, and at least 80% to an annuity when leaving before 60 and before 15 years |
+| NPS Tier II | 9% (an assumption, not guaranteed) | Monthly investments with no lock-in, compounded monthly. The screen lists Tier II's rules and how it differs from Tier I |
 | SIP | 12% (an assumption, not guaranteed) | Monthly investments at the start of each month, compounded monthly |
+| Lumpsum | 12% (an assumption, not guaranteed) | One mutual fund investment, compounded yearly |
 
 Every rate can be changed, to try a different rate or a bank's own.
 
@@ -34,8 +37,15 @@ account. NSC, KVP, FD, SCSS and MIS are single deposits fixed at the rate on the
 original amount and that rate.
 
 The government rates are those for **1 October – 31 December 2026**. The Ministry of Finance sets
-them every quarter; when they change, update `Rates` at the top of
-[`Schemes.kt`](app/src/main/java/io/github/akrishna87/semippu/Schemes.kt).
+them every quarter, and they're kept up to date automatically: the
+[Quarterly rates workflow](.github/workflows/rates.yml) runs early in January, April, July and October,
+reads the rates from [India Post's official page](https://www.indiapost.gov.in/banking-services/savings)
+([`ci/update_rates.py`](ci/update_rates.py)), and when anything has changed, commits them to `Rates` at the top
+of [`Schemes.kt`](app/src/main/java/io/github/akrishna87/semippu/Schemes.kt) and to this README, then builds and
+publishes a new APK. Install it over the old one to get the new rates. If the page can't be read or a rate is
+missing, the workflow fails rather than guessing, and GitHub emails you. The app itself still never goes online:
+once a quarter is over it says so on the Savings tab, so you know to update. EPF's rate is declared once a year
+by EPFO, so update `Rates.EPF` by hand when it's announced (EPFO's site doesn't answer outside India).
 
 ## Loans
 
@@ -58,14 +68,14 @@ then any part payment.
 
 The unit tests check the sums against figures that banks, the Post Office and fund houses publish:
 ₹1.5 lakh a year in PPF for 15 years at 7.1% is ₹40,68,209; ₹1,000 a month in a 5-year RD at 6.7% is
-₹71,366; ₹10,000 a month in a SIP for 10 years at 12% is ₹23,23,391. KVP doubles in 115 months at 7.5%.
+₹71,366; ₹10,000 a month in a SIP for 10 years at 12% is ₹23,23,391; ₹1 lakh as a lumpsum for 10 years at 12% is ₹3,10,585. KVP doubles in 115 months at 7.5%.
 A ₹10 lakh loan at 10% for 20 years has an EMI of ₹9,650 and ₹13,16,052 of interest. Part payments are
 checked against the closed-form number of months left.
 
 ## Not included
 
 - Tax: what you'd owe on taxable interest, or 80C savings.
-- NPS, Atal Pension Yojana, and the EPS pension that comes with EPF.
+- Atal Pension Yojana, NPS Vatsalya, and the EPS pension that comes with EPF.
 - Prepayment charges on loans, and floating rates that change during the loan.
 - Comparing schemes side by side.
 
@@ -80,7 +90,8 @@ Jetpack Compose and Material 3, with no other libraries.
 | `app/src/main/java/…/ui/Screens.kt` | The Savings and Loans tabs and the savings calculator screen |
 | `app/src/main/java/…/ui/LoanScreen.kt` | The loan calculator screen |
 | `app/src/test/…/SchemesTest.kt`, `LoansTest.kt` | The tests against published figures |
-| `ci/smoke-test.sh` | The emulator test: PPF and SCSS, then a home loan's EMI and a part payment |
+| `ci/smoke-test.sh` | The emulator test: PPF, SCSS, EPF, NPS Tier I and a lumpsum, then a home loan's EMI and a part payment. `ci/expected.py` works out the figures that depend on the current rates |
+| `ci/update_rates.py`, `.github/workflows/rates.yml` | The quarterly rates update from India Post |
 
 ## Building
 

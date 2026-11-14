@@ -1,5 +1,6 @@
 package io.github.akrishna87.semippu
 
+import java.time.LocalDate
 import java.time.Year
 import java.util.Locale
 import kotlin.math.abs
@@ -8,9 +9,14 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
-/** Small savings rates notified by the Ministry of Finance. Update these every quarter. */
+/**
+ * Small savings rates notified by the Ministry of Finance every quarter. The "Quarterly rates" workflow
+ * (ci/update_rates.py) reads them from India Post at the start of each quarter and updates these lines.
+ */
 object Rates {
     const val QUARTER = "1 Oct – 31 Dec 2026"
+    /** The last day these rates apply to; after it the app says a newer quarter has started. */
+    const val QUARTER_END = "2026-12-31"
     const val PPF = 7.1
     const val SSY = 8.2
     const val NSC = 7.7
@@ -65,6 +71,12 @@ data class Result(
     val start: Double = 0.0,
     /** Who [invested] came from, when it's more than one person (EPF: you and your employer). */
     val parts: List<Pair<String, Double>> = emptyList(),
+    /** What happens to [maturity] at the end (NPS: the lump sum, the annuity and the pension it pays). */
+    val after: List<Pair<String, Double>> = emptyList(),
+    /** Something to know about this result in particular. */
+    val note: String? = null,
+    /** What [maturity] is called in the summary. */
+    val title: String = "Maturity value",
 )
 
 class Scheme(
@@ -94,6 +106,9 @@ private fun since(maxYears: Int) = Field(
 
 /** Whole years since the account was opened, or 0 for a new one. */
 private fun done(v: Map<String, Double>) = v["since"]?.let { thisYear - it.toInt() } ?: 0
+
+/** True once the quarter in [Rates] is over, so the government may have notified newer rates. */
+fun ratesOutOfDate(today: LocalDate = LocalDate.now()) = today.isAfter(LocalDate.parse(Rates.QUARTER_END))
 
 val schemes = listOf(
     Scheme(
@@ -140,7 +155,7 @@ val schemes = listOf(
             Field("amount", "Amount (₹)", 100000.0, 1000.0, 1e9, step = 100.0, hint = "From ₹1,000, in ₹100s"),
             rate(Rates.KVP),
         ),
-        "Doubles your money; at the current rate that takes 115 months. From ₹1,000, in multiples of ₹100. " +
+        "Doubles your money; at the current rate that takes ${kvpMonths(Rates.KVP)} months (${term(kvpMonths(Rates.KVP))}). From ₹1,000, in multiples of ₹100. " +
             "The interest is taxable.",
     ) { kvp(it.getValue("amount"), it.getValue("rate")) },
     Scheme(
@@ -165,20 +180,27 @@ val schemes = listOf(
             "every month, and the deposit comes back after 5 years. The interest is taxable.",
     ) { payout(it.getValue("amount"), it.getValue("rate"), perYear = 12, every = "every month") },
     Scheme(
-        "epf", "EPF", "Employees' Provident Fund", "Retirement",
+        "epf", "EPF + VPF", "Employees' and Voluntary Provident Fund", "Retirement",
         listOf(
             Field("basic", "Basic pay + DA a month (₹)", 30000.0, 1.0, 1e8),
             Field("age", "Your age", 30.0, 18.0, 59.0, step = 1.0),
             Field("retire", "Retire at", 58.0, 19.0, 60.0, step = 1.0, hint = "EPF is paid out at 58"),
             Field("raise", "Pay rise each year (%)", 5.0, 0.0, 30.0),
-            Field("rate", "Interest rate (% a year)", Rates.EPF, 0.1, 30.0, hint = "Rate for ${Rates.EPF_YEAR}"),
-            Field("vpf", "VPF (% of basic + DA)", 0.0, 0.0, 88.0, hint = "Optional: extra you choose to put in", optional = true),
+            Field("rate", "Interest rate (% a year)", Rates.EPF, 0.1, 30.0, hint = "EPFO's rate for ${Rates.EPF_YEAR}"),
+            Field(
+                "vpf", "VPF (% of basic + DA)", 0.0, 0.0, 88.0,
+                hint = "Optional: extra you choose to put in, on top of your 12%", optional = true,
+            ),
             balance(hint = "Optional: from your EPF passbook"),
         ),
-        "You put in 12% of basic + DA, and your employer 12%: 3.67% goes to your EPF and 8.33% to the pension " +
-            "scheme (EPS), at most ₹1,250 a month. VPF is extra you can choose to add, up to all of your basic, and " +
-            "earns the same rate. Interest is worked out on each month's balance and added once a year. Interest on " +
-            "more than ₹2.5 lakh a year of your own contributions is taxable. The EPS pension isn't included here.",
+        "EPF: you put in 12% of basic + DA, and your employer 12%: 3.67% goes to your EPF and 8.33% to the " +
+            "pension scheme (EPS), at most ₹1,250 a month.\n\n" +
+            "VPF (Voluntary Provident Fund): extra you choose to put into the same account through your employer, " +
+            "up to all of your basic + DA. It earns the same rate as EPF, and your employer doesn't add to it. " +
+            "Ask your payroll team to start it; it's usually fixed for the financial year.\n\n" +
+            "Interest is worked out on each month's balance and added once a year. Interest on more than ₹2.5 lakh " +
+            "a year of your own contributions (EPF and VPF together) is taxable. Your contributions count towards " +
+            "80C in the old tax regime. The EPS pension isn't included here.",
         check = { v -> if (v.getValue("retire") <= v.getValue("age")) "retire" to "Later than your age" else null },
     ) {
         epf(
@@ -186,6 +208,84 @@ val schemes = listOf(
             it.getValue("rate"), it["vpf"] ?: 0.0, it["balance"] ?: 0.0,
         )
     },
+    Scheme(
+        "nps1", "NPS Tier I", "National Pension System: the pension account", "Retirement",
+        listOf(
+            Field("monthly", "You put in each month (₹)", 5000.0, 1.0, 1e8, hint = "At least ₹1,000 a year"),
+            Field(
+                "employer", "Your employer puts in each month (₹)", 0.0, 0.0, 1e8,
+                hint = "Optional: corporate NPS", optional = true,
+            ),
+            Field("age", "Your age", 30.0, 18.0, 84.0, step = 1.0, hint = "You can join from 18 to 85"),
+            Field("exit", "Exit at", 60.0, 19.0, 85.0, step = 1.0, hint = "60 is the usual exit; you can stay in until 85"),
+            Field("stepup", "Increase each year (%)", 0.0, 0.0, 50.0, hint = "How much more you put in each year"),
+            Field(
+                "rate", "Expected return (% a year)", 10.0, 0.1, 30.0,
+                hint = "Not guaranteed: depends on your equity share (up to 75%)",
+            ),
+            Field(
+                "annuity", "Kept for a pension (%)", 20.0, 20.0, 100.0,
+                hint = "At least 20% (40% for government employees)",
+            ),
+            Field("annuityRate", "Annuity rate (% a year)", 6.0, 1.0, 15.0, hint = "Insurers' rates vary; check theirs"),
+            balance("Value today (₹)", "Optional: from your NPS statement"),
+            since(67),
+        ),
+        "Tier I is the pension account, and the one you must open first.\n\n" +
+            "• Money in: at least ₹500 to open and ₹1,000 a year, with no upper limit. Unlimited contributions until 85.\n" +
+            "• Locked in until 60 (or 15 years, if earlier). Before then you can take out up to 25% of your own " +
+            "contributions, up to 4 times, 4 years apart, for things like children's education or marriage, a house " +
+            "or illness.\n" +
+            "• At exit: up to 80% as a lump sum (government employees: 60%) and at least 20% (40%) buys an annuity " +
+            "that pays a pension for life. With ₹8 lakh or less you can take it all; from ₹8 lakh to ₹12 lakh, up to " +
+            "₹6 lakh as a lump sum and the rest over at least 6 years or as an annuity.\n" +
+            "• Leaving early (before 60 and before 15 years): at least 80% must buy an annuity, unless the total is " +
+            "₹5 lakh or less.\n" +
+            "• Tax: in the old regime your contributions count towards 80C (up to ₹1.5 lakh) and up to ₹50,000 more on " +
+            "top (80CCD(1B)). Your employer's contribution is deductible in both regimes: up to 14% of basic + DA in " +
+            "the new regime, 10% in the old. At exit 60% of the total is tax-free; any lump sum above that is taxed " +
+            "at your slab, and so is the pension.\n" +
+            "• Choice: Auto (life-cycle funds that cut equity as you age) or Active (you set it: up to 75% equity, " +
+            "with corporate bonds and government securities). You can change it 4 times a year.\n\n" +
+            "Returns aren't guaranteed: the expected return is an assumption. Contributions are taken at the start " +
+            "of each month and grow every month.",
+        check = { v ->
+            when {
+                v.getValue("exit") <= v.getValue("age") -> "exit" to "Later than your age"
+                done(v) > v.getValue("age") - 18 -> "since" to "You'd have been under 18"
+                else -> null
+            }
+        },
+    ) {
+        nps(
+            it.getValue("monthly"), it["employer"] ?: 0.0, it.getValue("age").toInt(), it.getValue("exit").toInt(),
+            it.getValue("stepup"), it.getValue("rate"), it.getValue("annuity"), it.getValue("annuityRate"),
+            it["balance"] ?: 0.0, done(it),
+        )
+    },
+    Scheme(
+        "nps2", "NPS Tier II", "National Pension System: the savings account", "Retirement",
+        listOf(
+            Field("monthly", "Invest each month (₹)", 5000.0, 1.0, 1e8, hint = "At least ₹250 each time"),
+            Field("years", "Years", 10.0, 1.0, 50.0, step = 1.0),
+            Field("rate", "Expected return (% a year)", 9.0, 0.1, 30.0, hint = "Not guaranteed"),
+            balance("Value today (₹)", "Optional: from your NPS statement"),
+        ),
+        "Tier II is an optional savings account, opened alongside an active Tier I.\n\n" +
+            "• Money in: at least ₹1,000 to open and ₹250 after that, with no yearly minimum and no upper limit.\n" +
+            "• No lock-in: take out any amount at any time, with no annuity to buy. You can also move money from " +
+            "Tier II into Tier I (but not back).\n" +
+            "• Tax: no deduction for what you put in, and gains are taxable. Central government employees can use " +
+            "the Tier II Tax Saver scheme instead: it counts towards 80C in the old regime, with a 3-year lock-in.\n" +
+            "• It invests in the same funds as Tier I, at the same low charges, and you can choose a different fund " +
+            "manager and mix for it.\n" +
+            "• Closing Tier I closes Tier II too, and its balance is paid to your bank.\n\n" +
+            "Tier I vs Tier II: Tier I is for retirement, with tax benefits and money locked until 60. Tier II is " +
+            "for flexible savings, with no tax benefits and no lock-in.\n\n" +
+            "Returns aren't guaranteed: the expected return is an assumption. Contributions are taken at the start " +
+            "of each month and grow every month.",
+    ) { sip(it.getValue("monthly"), it.getValue("years").toInt(), it.getValue("rate"), it["balance"] ?: 0.0)
+        .copy(note = "No lock-in: you can take out any of this whenever you want.") },
     Scheme(
         "fd", "Fixed Deposit", "Bank fixed deposit", "Deposits",
         listOf(
@@ -218,6 +318,17 @@ val schemes = listOf(
         "Returns aren't guaranteed: the expected return is an assumption, not a promise. Assumes you invest at the " +
             "start of each month.",
     ) { sip(it.getValue("monthly"), it.getValue("years").toInt(), it.getValue("rate"), it["balance"] ?: 0.0) },
+    Scheme(
+        "lumpsum", "Lumpsum", "Mutual fund lumpsum", "Mutual funds",
+        listOf(
+            Field("amount", "Invest once (₹)", 100000.0, 1.0, 1e10),
+            Field("years", "Years", 10.0, 1.0, 50.0, step = 1.0),
+            Field("rate", "Expected return (% a year)", 12.0, 0.1, 30.0, hint = "Not guaranteed"),
+        ),
+        "One investment, left to grow. Returns aren't guaranteed: the expected return is an assumption, not a " +
+            "promise. It's compounded once a year, as fund houses' lumpsum calculators do. Equity fund gains above " +
+            "₹1.25 lakh in a year are taxed at 12.5% when you sell after a year.",
+    ) { lumpsum(it.getValue("amount"), it.getValue("years").toInt(), it.getValue("rate")) },
 )
 
 // ---------- the calculations ----------
@@ -306,9 +417,9 @@ fun rdValue(monthly: Double, months: Int, ratePct: Double): Double {
 }
 
 /**
- * EPF until [retire]: each month 12% of [basic] (plus [vpfPct]) from you and 12% from your employer, less the
- * pension share of 8.33% (at most ₹1,250). Interest at [ratePct] on each month's closing balance, added at the end
- * of the year. [basic] rises by [raisePct] every year after the first.
+ * EPF until [retire]: each month 12% of [basic] (plus [vpfPct] as VPF) from you and 12% from your employer, less
+ * the pension share of 8.33% (at most ₹1,250). Interest at [ratePct] on each month's closing balance, added at the
+ * end of the year. [basic] rises by [raisePct] every year after the first.
  */
 fun epf(
     basic: Double, age: Int, retire: Int, raisePct: Double, ratePct: Double, vpfPct: Double = 0.0, start: Double = 0.0,
@@ -318,23 +429,99 @@ fun epf(
     var pay = basic
     var b = start
     var yours = 0.0
+    var vpf = 0.0
     var employer = 0.0
+    var taxableFrom: Int? = null
     val rows = (1..years).map { y ->
         if (y > 1) pay *= 1 + raisePct / 100
-        val mine = pay * (0.12 + vpfPct / 100)
+        val mine = pay * 0.12
+        val extra = pay * vpfPct / 100
         val theirs = pay * 0.12 - minOf(pay * 0.0833, 1250.0)
-        val c = mine + theirs
+        val c = mine + extra + theirs
         // Closing balances of the 12 months: b + c, b + 2c … b + 12c.
         val interest = r * (12 * b + 78 * c)
         b += 12 * c + interest
         yours += 12 * mine
+        vpf += 12 * extra
         employer += 12 * theirs
+        if (taxableFrom == null && 12 * (mine + extra) > 250000) taxableFrom = age + y - 1
         Row("Age ${age + y}", 12 * c, interest, b)
     }
+    val parts = if (vpf > 0) {
+        listOf("Your EPF (12%)" to yours, "Your VPF" to vpf, "Your employer puts in" to employer)
+    } else {
+        listOf("You put in" to yours, "Your employer puts in" to employer)
+    }
+    val note = taxableFrom?.let {
+        "From age $it you put in more than ₹2.5 lakh a year: the interest on the part above that is taxable."
+    }
     return Result(
-        yours + employer, b - start - yours - employer, b, years * 12, rows = rows, start = start,
-        parts = listOf("You put in" to yours, "Your employer puts in" to employer),
+        yours + vpf + employer, b - start - yours - vpf - employer, b, years * 12, rows = rows, start = start,
+        parts = parts, note = note,
     )
+}
+
+/**
+ * NPS Tier I from [age] to [exit]: [monthly] from you and [employer] from your employer at the start of each month,
+ * both rising by [stepUpPct] a year, growing at [ratePct] a year compounded monthly, on top of [start] today. The
+ * account was opened [done] years ago. At exit [annuityPct] of it buys an annuity paying [annuityRatePct] a year, and
+ * the rest can be taken as a lump sum, under the rules for non-government subscribers.
+ */
+fun nps(
+    monthly: Double, employer: Double, age: Int, exit: Int, stepUpPct: Double, ratePct: Double,
+    annuityPct: Double, annuityRatePct: Double, start: Double = 0.0, done: Int = 0,
+): Result {
+    val i = ratePct / 1200
+    var mine = monthly
+    var theirs = employer
+    var b = start
+    var yours = 0.0
+    var employers = 0.0
+    val rows = (1..exit - age).map { y ->
+        if (y > 1) { mine *= 1 + stepUpPct / 100; theirs *= 1 + stepUpPct / 100 }
+        val before = b
+        repeat(12) { b = (b + mine + theirs) * (1 + i) }
+        yours += 12 * mine
+        employers += 12 * theirs
+        Row("Age ${age + y}", 12 * (mine + theirs), b - before - 12 * (mine + theirs), b)
+    }
+    val years = exit - age + done
+    val early = exit < 60 && years < 15
+    // Before 60 and 15 years, at least 80% buys an annuity; otherwise at least 20%.
+    val share = if (early) maxOf(annuityPct, 80.0) else annuityPct
+    val allLumpSum = if (early) b <= 500000 else b <= 800000
+    val annuity = if (allLumpSum) 0.0 else b * share / 100
+    val lumpSum = b - annuity
+    val pension = annuity * annuityRatePct / 100 / 12
+    val note = when {
+        allLumpSum && early -> "₹5 lakh or less when you leave early: you can take all of it as a lump sum."
+        allLumpSum -> "₹8 lakh or less at exit: you can take all of it as a lump sum, with no annuity to buy."
+        early -> "Leaving before 60 and before 15 years in NPS: at least 80% must buy an annuity, so " +
+            "${plain(share)}% does here."
+        b <= 1200000 -> "From ₹8 lakh to ₹12 lakh you can also take up to ₹6 lakh as a lump sum and the rest " +
+            "over at least 6 years, instead of buying an annuity."
+        else -> null
+    }
+    val taxFree = minOf(lumpSum, b * 0.6)
+    val after = buildList {
+        add("Lump sum you can take" to lumpSum)
+        if (lumpSum > taxFree + 0.5) add("Of which tax-free (60% of the total)" to taxFree)
+        if (annuity > 0) {
+            add("Buys an annuity (${plain(share)}%)" to annuity)
+            add("Pension a month, at ${plain(annuityRatePct)}%" to pension)
+        }
+    }
+    return Result(
+        yours + employers, b - start - yours - employers, b, (exit - age) * 12, rows = rows, start = start,
+        parts = if (employers > 0) listOf("You put in" to yours, "Your employer puts in" to employers) else emptyList(),
+        after = after, note = note, title = "Your NPS at exit",
+    )
+}
+
+/** One investment of [amount], growing at [ratePct] a year, compounded yearly. */
+fun lumpsum(amount: Double, years: Int, ratePct: Double): Result {
+    val rows = table(years * 12, { amount }) { m -> amount * (1 + ratePct / 100).pow(m / 12) }
+    return result(amount, rows.last().balance, years * 12, rows)
 }
 
 /** [months] more instalments; an RD already running holds [start] today, which keeps earning. */
